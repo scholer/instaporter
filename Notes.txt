@@ -1,0 +1,76 @@
+
+Note: There might be some naming confusion?
+* oauth2:
+* - Simplegeo's python-oauth2
+* rauth: github.com/litl/rauth
+*
+
+
+
+Libraries for handling oauth:
+* Lists of libraries:
+* - http://oauth.net/code/
+* RAuth : github.com/litl/rauth  (OAuth1, OAuth2 and Ofly, both service and client/session)
+* - rauth.readthedocs.org, Started Feb 2012, last updated Dec 2014.
+* - Uses Kenneth's requests.session module for sessions! Is basically requests with oauth on top.
+* - OAuth1Service is "a wrapper around a specialized Requests’ Session object (OAuth1Session)."
+* - Not sure how to make this compatible with xAuth flow.
+* github.com/idan/oauthlib/
+* - idan's oauthlib. Started in 2012, last updated October 2014.
+* - oauthlib.readthedocs.org
+* - does not seem to perform any http requests, only the data modelling, encoding, signing, etc.
+* -- See Kenneth's requests-oauthlib for the equivalent to rauth.session.RauthSession(requests.session.Session)
+* python-oauth2 : github.com/simplegeo/python-oauth2, pypi.python.org/pypi/oauth2
+* - This seems pretty solid. But uses httplib2 for requests...
+* - Client example: https://github.com/simplegeo/python-oauth2/blob/master/example/client.py
+* Sanction : github.com/demianbrecht/sanction
+* slumber : github.com/samgiles/slumber, slumber.readthedocs.org
+* - Examples: gist.github.com/toffer/1962023
+* Google's OAuth2Client library: github.com/google/oauth2client/ (2010-2015)
+* - pypi.python.org/pypi/oauth2client,
+* - uses httplib2, but does not seem to rely on any other (non-standard) libs.
+* github.com/NateFerrero/oauth2lib (2012-2013)
+* github.com/liluo/py-oauth2, pypi.python.org/pypi/py-oauth2 ()
+* - Seems pretty extensive and well-authored.
+OAuth libs using the requsts module:
+* github.com/requests/requests-oauthlib (Kenneth Reitz)
+* - requests-oauthlib.readthedocs.org, pypi.python.org/pypi/requests-oauthlib,
+* - Combines requests library with Idan's OAuthLib, github.com/idan/oauthlib/
+* - updated 2014, Authored by Kenneth Reitz (original requests dev!), OAuth1 and OAuth2.
+* - Unfortunately, this seems mostly to support the 'full' OAuth1 workflow, not xAuth?
+* - Note that Kenneth has both github.com/requests and github.com/kennethreitz
+* github.com/maraujop/requests-oauth - seems weird.
+* - and this:maraujop/requests-oauth2 - same
+
+
+
+
+How does requests-oauthlib work?
+1) Uses requests.Session session object throughout (OAuth1Session).
+2) A OAuth1 client is specified as the session's .auth attribute. This uses oauthlib.oauth1.Client and
+*) One thing: It seems requests-oauthlib work a lot with auth urls.
+    However, Instapaper's response to /api/1/oauth/access_token has a qline-formatted body
+    with oauth_token and oauth_token_secret:
+        oauth_token=aabbccdd&oauth_token_secret=efgh1234
+
+* Notes:
+* - At first, Kenneth's requests-oauthlib appears rather similar to rauth, i.e.
+    we have session objects which are derived from requests.Session by subclassing.
+    However, rauth.session.OAuth1Session overwrites requests.Session's request() method.
+    While requests-oauthlib.oauth1_session.OAuth1Session uses the .auth property, which
+    re-writes the request (signs it, etc) before it is sent (using the normal requests machinery).
+
+Implementation alternatives:
+a) Use simplegeo's python-oauth2 lib, just like the many other examples.
+    Pros: Seems the simplest.
+    Cons: oauth2 uses httplib2 instead of making a (reusable) requests session.
+            That is: All signed requests are made using oauth2.Client (subclasses httplib2.Http).
+            and returned with a call to httplib2.Http.request().
+            That means: No use of requests library (and all its nice things), only httplib2.
+b) Use rauth? - Not sure how I would do this for xAuth (the OAuth1 workflow seems hard coded...?)
+c) Use oauthlib
+    - Implementation inspired by requests-oauthlib.
+    - Perhaps include and use requests-oauthlib and just make your own xAuth subclass?
+    - Before you go all in, see if you can just use the xAuth workflow with requests-oauthlib?
+        - Nope, requests-oauthlib.OAuth1Session is fully url-driven, no way to input
+    Pros: This seems like the "proper" way to do it.
