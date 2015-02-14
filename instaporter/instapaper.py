@@ -15,7 +15,7 @@
 ##
 ##    You should have received a copy of the GNU General Public License
 
-# pylint: disable=C0301,R0913
+# pylint: disable=C0103,C0301,R0913
 
 """
 
@@ -37,8 +37,53 @@ Ruby:
 
 """
 
-from xauth_session import XAuthSession
-import json
+
+from urllib.parse import urljoin#, urlsplit
+#import json
+from six import string_types
+import logging
+logger = logging.getLogger(__name__)
+
+
+from .xauth_session import XAuthSession
+from .utils import credentials_prompt, load_config, save_config#, load_consumer_keys
+
+
+def is_error(response):
+    """
+    Check response for errors.
+    Returns False if response is OK.
+    If response has HTTP status code larger than or equal to 300,
+    the HTTP status code is returned.
+    If the response is an Instapaper API error, the
+    API error's error_code is returned.
+    If the data cannot be parsed as json, return 1.
+    If the data does not have a type, return 2.
+    Note that the data could be an empty list;
+    that it not interpreted as an error.
+    """
+    if response.status_code >= 300:
+        return response.status
+    try:
+        data = response.json()
+    except ValueError:
+        return 1
+    if len(data) == 0:
+        print("Empty response (but that's not neccesarily an error, could be empty list):", response)
+        return 0
+    try:
+        if data[0]["type"] == "error":
+            return data[0]["error_code"]
+        else:
+            return False
+    except KeyError:
+        print("What the fuck, response has no type?! --", data)
+        return 2
+
+
+
+
+
 
 
 class InstapaperClient(object):
@@ -51,41 +96,125 @@ class InstapaperClient(object):
         /api/1.1/folders/list
         /api/1.1/bookmarks/<bookmark-id>/highlight
     """
-    def __init__(self, config, client_key, client_secret, username=None, password='', headers=None, apiurl=None):
+
+    pass_prompt = credentials_prompt
+
+    def __init__(self, config, client_key, client_secret, username=None, password='', headers=None):
+        # Check whether config is a string (filepath) or dict:
+        if isinstance(config, string_types):
+            self.config_path = config
+            config = load_config(config)
+        else:
+            self.config = config
+        # Note: The username might change over time. Could be a property that queries the latest request header.
+        self.username = username or config.get('instapaper_username')
+        self.status = False
+        self.apiurl = config.get('apiurl') or 'https://www.instapaper.com/api/1.1/'
+        # Create xauth session:
         self.session = XAuthSession(client_key, client_secret)
-        self.username = username # This might change. Should be a property that queries the header..
         if headers:
             self.session.headers.update(headers)
-        if username:
+        if 'access_tokens' in config:
+            self.update_access_tokens(config['access_tokens'])
+            userinfo = self.verify_credentials()
+            logger.info("xAuth using existing access_tokens returned: %s", userinfo)
+            if userinfo:
+                logger.info("-- existing tokens seem OK, will not attempt to obtain new..")
+                return
+        if config.get('instapaper_login_prompt'):
+            username, password = credentials_prompt(self.username)
+        if username and password is not False:
             self.login(username, password)
-        self.apiurl = apiurl or 'https://www.instapaper.com/api/1.1/'
 
-    def get_resource(self, res):
+    def get_resource_url(self, resource):
+        """ Get absolute url for a named resource. """
         return urljoin(self.apiurl, resource)
 
 
-    def login(self, username, password=''):
-        url = self.get_resource('oauth/access_token')
+    def login(self, username, password='', persist_tokens=None):
+        """
+        Log in with username and your optional password.
+        Returns a pair of access tokens (token+secret) on success.
+        Returns False if login failed.
+        """
+        url = self.get_resource_url('oauth/access_token')
         if not username:
             print("No username provided, will not attempt login..")
-        r = self.session.request_access_tokens(url, username, password)
+            return
+        tokens = self.session.request_access_tokens(url, username, password)
+        if not tokens:
+            return False
+        userinfo = self.verify_credentials()
+        if not userinfo:
+            return False
+        self.access_tokens = tokens
+        if persist_tokens is None:
+            persist_tokens = self.config.get('persist_access_tokens') or bool(self.config.get('access_tokens'))
+        if persist_tokens:
+            self.config['access_tokens'] = tokens
+            save_config(self.config)
+        return tokens
+
+
+    def verify_credentials(self):
+        """
+        Returns the currently logged in user.
+        Output on success: A user object, e.g.
+            [{"type":"user","user_id":54321,"username":"TestUserOMGLOL"}]
+        """
+        #
         r = self.post('account/verify_credentials')
-        # r.json() has keys "user_id" and "username".
-        self.username = r.json()["username"]
+        try:
+            # r.json() has keys "user_id" and "username".
+            userinfo = r.json()
+            self.status = userinfo[0]["type"] == 'user' and 'username' in userinfo[0]
+            self.username = userinfo[0]["username"]
+        except (ValueError, IndexError, KeyError):
+            print("Userinfo did not produce expected result:", r.text)
+            return False
+        return userinfo
+
+
+    def update_access_tokens(self, tokens):
+        """
+        Update the XAuthSession with this pair of access tokens.
+        Tokens must be a dict.
+        """
+        # This is done automatically by XAuthSession.request_access_tokens:
+        self.session._populate_attributes(tokens) # pylint: disable=W0212
+
+
+    def clear_access_tokens(self):
+        """ Removes access tokens from config and saves it. """
+        del self.config['access_tokens']
+        save_config(self.config)
 
 
     def post(self, endpoint, data=None):
         """
         Instapaper specifies that parameters are never sent in the query string.
         """
-        url = self.get_resource(endpoint)
+        url = self.get_resource_url(endpoint)
         return self.session.post(url, data=data)
 
-    def check_errors(self, response):
-        pass
 
     def check_response(self, response, json=True):
-        return response.json()
+        """
+        Check whether response is ok and return it.
+        """
+        err = is_error(response)
+        if err:
+            logger.info("Error response: %s", response)
+            logger.info("Response status_code: %s, text: %s", response.status_code, response.text)
+            self.status = False
+            # Should probably raise an error or something here...
+        else:
+            logger.debug("Response OK: Status code: %s", response.status_code)
+            self.status = True
+        if json:
+            return response.json()
+        else:
+            return response
 
 
     ########################
@@ -104,46 +233,72 @@ class InstapaperClient(object):
         have = ensure_string(have)
         highlights = ensure_string(highlights)
         data = {'limit': limit, 'folder_id': folder_id, 'have': have, 'highlights': highlights}
-        data = {k: v for k, v in data if v is not None}
+        data = {k: v for k, v in data.items() if v is not None}
         r = self.post('bookmarks/list', data=data)
         return self.check_response(r)
 
 
-    def add_bookmark(self, title=None, description=None, folder_id=None, resolve_final_url=1,
-                     content=None, is_private_from_source=0):
+    def add_bookmark(self, url=None, title=None, description=None, folder_id=None,
+                     resolve_final_url=1, content=None, is_private_from_source=None):
         """
         Add a bookmark.
+        Returns:
+            On success: a list with one dict describing the added bookmark. (json parsed)
+            On API err: a list with one dict describing the error.
         Uh... If parameters are passed in the body as a urlencoded line.. How do I pass the content?
         - should the content be escaped in any way?
+        Input parameters:
+            url: Required, except when using private sources (see below).
+            title: Optional. If omitted or empty, the title will be looked up by Instapaper synchronously. This will delay the action, so please specify the title if you have it.
+            description: Optional. A brief, plaintext description or summary of the article. Twitter clients often put the source tweet's text here, and Instapaper's bookmarklet puts the selected text here if the user has selected any.
+            folder_id: Optional. The integer folder ID as returned by the folder/list method described below.
+            resolve_final_url: Optional, default 1. Specify 1 if the url might not be the final URL that a browser would resolve when fetching it, such as if it's a shortened URL, it's a URL from an RSS feed that might be proxied
+            content: The full HTML content of the page, or just the <body> node's content if possible. Must be utf-8.
+            is_private_from_source: A short description label of the source of the private bookmark, such as "email" or "MyNotebook Pro".
         """
-        data = {'title': title, 'description': description, 'folder_id': folder_id, 'resolve_final_url': resolve_final_url, 'content': content, 'is_private_from_source': is_private_from_source}
-        data = {k: v for k, v in data if v is not None}
+        if url is None and not is_private_from_source:
+            raise ValueError("No url privided; url must be given for non-private sources.")
+        data = {'url': url, 'title': title, 'description': description,
+                'folder_id': folder_id, 'resolve_final_url': resolve_final_url,
+                'content': content, 'is_private_from_source': is_private_from_source}
+        data = {k: v for k, v in data.items() if v is not None}
         r = self.post('bookmarks/add', data=data)
         return self.check_response(r)
 
     def delete_bookmark(self, bookmark_id):
+        """ Delete bookmark by id. """
+        logger.info("Deleting bookmark with id: %s", bookmark_id)
         r = self.post('bookmarks/delete', data={'bookmark_id': bookmark_id})
-        return self.check_response(r)
+        ret = self.check_response(r)
+        if ret == []:
+            logger.debug("Bookmark successfully deleted: %s", bookmark_id)
+        else:
+            logger.info("Bookmark deletion (%s) did not succeed: %s", bookmark_id, r.json())
 
     def star_bookmark(self, bookmark_id):
+        """ Star bookmark by id. """
         r = self.post('bookmarks/star', data={'bookmark_id': bookmark_id})
         return self.check_response(r)
 
     def archive_bookmark(self, bookmark_id):
+        """ Archive bookmark by id. """
         r = self.post('bookmarks/archive', data={'bookmark_id': bookmark_id})
         return self.check_response(r)
 
     def unarchive_bookmark(self, bookmark_id):
+        """ Un-archive bookmark by id. """
         r = self.post('bookmarks/unarchive', data={'bookmark_id': bookmark_id})
         return self.check_response(r)
 
     def move_bookmark(self, bookmark_id, folder_id):
+        """ Move bookmark with bookmark_id to folder with folder_id. """
         r = self.post('bookmarks/move', data={'bookmark_id': bookmark_id, 'folder_id': folder_id})
         return self.check_response(r)
 
-    def unarchive_bookmark(self, bookmark_id):
+    def get_bookmark_text(self, bookmark_id):
+        """ Get text for bookmark with bookmark_id. """
         r = self.post('bookmarks/get_text', data={'bookmark_id': bookmark_id})
-        return self.check_errors(r)
+        return self.check_response(r)
 
 
 
@@ -153,18 +308,22 @@ class InstapaperClient(object):
     ######################
 
     def list_folders(self):
+        """ List all folders. """
         r = self.post('folders/list')
         return self.check_response(r)
 
     def add_folder(self, title):
+        """ Add folder with title <title> """
         r = self.post('folders/add', data={'title': title})
         return self.check_response(r)
 
-    def delete_folders(self, folder_id):
+    def delete_folder(self, folder_id):
+        """ Delete folder with folder_id """
         r = self.post('folders/delete', data={'folder_id': folder_id})
         return self.check_response(r)
 
-    def delete_folders(self, order):
+    def set_folder_order(self, order):
+        """ Set the sort order of folders. """
         r = self.post('folders/set_order', data={'order': order})
         return self.check_response(r)
 
@@ -175,15 +334,21 @@ class InstapaperClient(object):
     #########################
 
     def bookmark_highlights(self, bookmark_id):
+        """ Return highlights for bookmark with id <bookmark_id> """
         r = self.post('bookmarks/%d/highlights' % bookmark_id)
         return self.check_response(r)
 
     def bookmark_highlight(self, bookmark_id, text, position):
+        """
+        Create highlight for bookmark with id <bookmark_id>,
+        adding text at position.
+        """
         r = self.post('bookmarks/%d/highlight' % bookmark_id,
                       data={'text': text, 'position': position})
         return self.check_response(r)
 
     def delete_highlight(self, highlight_id):
+        """ Delete highlight with id <highlight_id> """
         r = self.post('highlights/%d/delete' % highlight_id)
         return self.check_response(r)
 
@@ -203,6 +368,11 @@ def make_dict_def(kwst):
 
 
 def ensure_string(value, delimiter=','):
+    """
+    Ensure that value is a string.
+    If value is a list/set/tuple, then return a string where each element
+    is joined by the given delimiter.
+    """
     if value and isinstance(value, (list, set, tuple)):
-        value = ",".join(value)
+        value = delimiter.join(value)
     return value

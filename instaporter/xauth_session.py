@@ -15,7 +15,7 @@
 ##
 ##    You should have received a copy of the GNU General Public License
 
-# pylint: disable=C0301
+# pylint: disable=C0103,C0301,R0903
 
 """
 
@@ -96,10 +96,12 @@ oauthlib details:
 
 """
 
+from urllib.parse import parse_qsl
 #import oauthlib
 from requests_oauthlib import OAuth1Session #, OAuth1
-
-
+#from six import string_types
+import logging
+logger = logging.getLogger(__name__)
 
 
 class XAuthSession(OAuth1Session):
@@ -135,8 +137,8 @@ class XAuthSession(OAuth1Session):
         # If data is a dict, then request will perform form-encoding.
         r = self.post(url, data=p)
         # parse_qsl is also used by oauthlib's urldecode.
-        tokens = urllib.parse.parse_qsl(r.text)
+        tokens = dict(parse_qsl(r.text))
+        if not tokens:
+            return False
         self._populate_attributes(tokens)
-
-
-
+        return tokens

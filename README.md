@@ -9,8 +9,10 @@ The application has several modes of operation, all involving interaction
 with Instapaper through the REST API.
 
 One mode of operation will retrieve access-protected content from a URL
-and upload it to your Instapaper reading list. This is similar to the
-Instapaper chrome extension, but does not require chrome to operate.
+and upload it to your Instapaper reading list.
+# This is similar to the Instapaper Chrome extension, but does not require Chrome to operate.
+# Edit: The Instapaper chrome extension does not download the content locally
+# it just sends the url and relies on Instapaper to download the content.
 This is particularly useful if you have access to content which is
 not publicly available, e.g. articles from scientific journals.
 These are often only available from within your university's IP range,

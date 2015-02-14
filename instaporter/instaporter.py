@@ -15,6 +15,7 @@
 ##
 ##    You should have received a copy of the GNU General Public License
 
+# pylint: disable=C0103,W0142
 
 """
 Instaporter: Transport content to Instapaper.
@@ -30,83 +31,134 @@ REST API doc: www.instapaper.com/api/full
 
 import os
 import requests
-import yaml
 import argparse
-import getpass
-from urllib.parse import urljoin, urlsplit
+#from urllib.parse import urljoin, urlsplit
+#from six import string_types
+import logging
+logger = logging.getLogger(__name__)
 
-from instapaper import InstapaperClient
+from .instapaper import InstapaperClient
+from .utils import credentials_prompt, load_consumer_keys, get_config#, load_config, save_config
 
-
-def credentials_prompt(user='', password=''):
-    if not user:
-        user = getpass.getuser()
-    user = input("User: [%s]" % user) or user
-    password = getpass.getpass() or password
-    return user, password
+LIBDIR = os.path.dirname(os.path.realpath(__file__))
 
 
-
-
-
-
-def load_config(filepath=None):
-    """ Load config from filesystem. """
-    if filepath is None:
-        filepath = os.path.expanduser("~/.ezfetcher.yaml")
-    try:
-        return yaml.load(open(filepath))
-    except FileNotFoundError:
-        return {}
-
-def save_config(config, filepath=None):
-    """ Load config from filesystem. """
-    if filepath is None:
-        filepath = os.path.expanduser("~/.instaporter.yaml")
-    try:
-        return yaml.dump(config, open(filepath))
-    except FileNotFoundError:
-        return {}
-
-
-def get_config(args=None):
-    """ Get config, merging args with persistent config. """
-    config = load_config()
-    if isinstance(argns, argparse.Namespace):
-        args = argns.__dict__
-    for key, value in args:
-        if value is not None:
-            config[key] = value
-    return config
 
 
 
 def get_argparser():
-    """ Get argument parser. """
+    """
+    Get argument parser.
+    Config parameters:
+        apiurl : Base api url, defaults to 'https://www.instapaper.com/api/1.1/'
+        access_tokens : saved access tokens.
+        persist_access_tokens : persist access tokens in config (only applies if config has no 'access_tokens' already.)
+        instapaper_username : Your Instapaper username/email.
+        instapaper_password : Your (optional) Instapaper password.
+        instapaper_login_prompt : allow the program to query the user for credentials as-needed.
+
+    """
     parser = argparse.ArgumentParser()
-    parser.add_argument('url', help="The URL to download pdf from.")
     parser.add_argument('--instapaper_username', '-u', help="Instapaper username/email.")
     parser.add_argument('--instapaper_password', '-p', help="Instapaper password, if you have one.")
 
+    subparsers = parser.add_subparsers(dest='command')
+
+    urlcommand = subparsers.add_parser('url', help="Download content from URL.")
+    urlcommand.add_argument('url', help="The URL to download pdf from.")
+
+    filecommand = subparsers.add_parser('file', help="Read content from this file.")
+    filecommand.add_argument('file', help="The URL to download pdf from.")
+
+    testcommand = subparsers.add_parser('test', help="Read content from this file.")
+
+    return parser
+
 
 def main(args):
-    url = args.pop('url')
+    """ Script main function. """
+    cmd = args.pop('command')
+    if cmd == 'url':
+        url = args.pop('url')
+    elif cmd == 'test':
+        pass
+    elif cmd == 'file':
+        files = args.pop('file')
+
+    # Load config, keys, credentials, etc:
     config = get_config(args)
     username = config.get('instapaper_username', '')
-    password = config.get('instapaper_password', '')
-    if not username or config.get('login_prompt') in ('always', ):
+    password = config.get('instapaper_password')
+    if not (config.get('instapaper_login_prompt') == "as-needed" and config.get('access_tokens')):
+        print("Using existing access tokens from config...")
+    if password is None or not username or config.get('instapaper_login_prompt') in ('always', ):
         username, password = credentials_prompt(username)
-    client_key = config['client_key']
-    client_secret = config['client_secret']
-    headers = config.get(headers)
-    client = InstapaperClient(config, client_key, client_secret, username, password, headers)
+    consumer_keys = load_consumer_keys()
+    consumer_key = consumer_keys['consumer_key']
+    consumer_secret = consumer_keys['consumer_secret']
+    headers = config.get('headers')
 
+    # Insta client to upload content:
+    client = InstapaperClient(config, consumer_key, consumer_secret, username, password, headers)
+
+
+    if cmd == 'url':
+        transport_url(client, url, args)
+    elif cmd == 'test':
+        pass
+    elif cmd == 'file':
+        transport_files(client, files, args)
+    else:
+        print("Command not recognized...!?")
+
+
+def transport_files(client, files, args):
+    """
+    Upload content from files to Instapaper.
+    """
+    for filepath in files:
+        with open(filepath) as fd:
+            content = fd.read()
+        add_bookmark(client, content, args)
+
+
+def transport_url(client, url, args):
+    """
+    Download content from url and upload to Instapaper.
+    """
+    # Session to download content:
     s = requests.Session()
-    s.get()
+    r = s.get(url)
+    html = r.text
+    # TODO: Extract body from html
+    content = html
+    # It seems is_private_from_source needs to be set, otherwise
+    # Instapaper will download content from url rather than the content provided by me.
+    add_bookmark(client, content, args)
 
+
+def add_bookmark(client, content, args):
+    """ Add bookmark wrapper. """
+    is_private_from_source = "Scientific journal"
+    kwargs = {'is_private_from_source': is_private_from_source,
+              #'url': url,
+              'title': args.get('title'),
+              'description': args.get('description'),
+              'resolve_final_url': 0,
+              'content': content}
+    print("Adding bookmark:")
+    bookmark = client.add_bookmark(**kwargs)
+    print("Bookmark added:\n", bookmark)
+
+
+
+
+def test(argns):
+    """ Simple test function. """
+    pass
 
 
 if __name__ == '__main__':
-    parser = get_argparser()
-    argns = parser.parse_args()
+    ap = get_argparser()
+    argns = ap.parse_args()
     main(argns)
