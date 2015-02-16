@@ -15,7 +15,7 @@
 ##
 ##    You should have received a copy of the GNU General Public License
 
-# pylint: disable=C0103,C0301,R0913
+# pylint: disable=C0103,C0301,R0902,R0904,R0913
 
 """
 
@@ -37,9 +37,10 @@ Ruby:
 
 """
 
-
+import os
 from urllib.parse import urljoin#, urlsplit
 #import json
+import pickle
 from six import string_types
 import logging
 logger = logging.getLogger(__name__)
@@ -47,6 +48,10 @@ logger = logging.getLogger(__name__)
 
 from .xauth_session import XAuthSession
 from .utils import credentials_prompt, load_config, save_config#, load_consumer_keys
+
+
+__version__ = 0.1
+
 
 
 def is_error(response):
@@ -82,6 +87,14 @@ def is_error(response):
 
 
 
+def save_cookies(fd, cookiejar):
+    """ Save cookiejar to file. """
+    pickle.dump(cookiejar, fd)
+
+def load_cookies(fd):
+    """ Load cookies from file. """
+    return pickle.load(fd)
+
 
 
 
@@ -99,21 +112,35 @@ class InstapaperClient(object):
 
     pass_prompt = credentials_prompt
 
-    def __init__(self, config, client_key, client_secret, username=None, password='', headers=None):
+    def __init__(self, config=None, client_key=None, client_secret=None,
+                 username=None, password='', headers=None, config_filepath=None):
+        """
+        filename or filepath?
+         -- filepath is the better choice, because filename is sometimes
+            interpreted as basename (myfile.txt) and sometimes the full
+            (absolute or relative) path, /path/to/myfile.txt or ../to/myfile.txt
+        """
         # Check whether config is a string (filepath) or dict:
-        if isinstance(config, string_types):
-            self.config_path = config
-            config = load_config(config)
-        else:
-            self.config = config
+        self.config = config or {}
+        self.config_filepath = config_filepath
+        if self.config_filepath:
+            self.load_config()
         # Note: The username might change over time. Could be a property that queries the latest request header.
         self.username = username or config.get('instapaper_username')
         self.status = False
         self.apiurl = config.get('apiurl') or 'https://www.instapaper.com/api/1.1/'
         # Create xauth session:
         self.session = XAuthSession(client_key, client_secret)
+        # Update headers:
+        if self.config.get('headers'):
+            self.headers.update(self.config['headers'])
         if headers:
-            self.session.headers.update(headers)
+            self.headers.update(headers)
+        if "User-Agent" not in self.headers:
+            self.headers["User-Agent"] = "Instaporter-InstaClient/%s github.com/scholer/Instaporter - rasmusscholer@gmail.com" % __version__
+        if self.cookies_filepath:
+            self.load_cookies()
+        # Update access_tokens:
         if 'access_tokens' in config:
             self.update_access_tokens(config['access_tokens'])
             userinfo = self.verify_credentials()
@@ -121,10 +148,92 @@ class InstapaperClient(object):
             if userinfo:
                 logger.info("-- existing tokens seem OK, will not attempt to obtain new..")
                 return
-        if config.get('instapaper_login_prompt'):
+        # Continue with login, unless disabled:
+        if config.get('instapaper_login_prompt', True) and (not username or not password):
             username, password = credentials_prompt(self.username)
         if username and password is not False:
-            self.login(username, password)
+            self.status = bool(self.login(username, password))
+
+    @property
+    def headers(self):
+        """ Return session headers. """
+        return self.session.headers
+    @property
+    def cookies(self):
+        """ Return session cookies. """
+        return self.session.cookies
+    @property
+    def cookies_filepath(self):
+        """ Returns cookie_filepath entry from config. """
+        path = self.config.get('cookies_filepath')
+        if path:
+            return os.path.expanduser(os.path.normpath(path))
+    @cookies_filepath.setter
+    def cookies_filepath(self, cookies_filepath):
+        """ Sets cookie_filepath entry in config. (ONLY if cookies_filepath has a non-null value). """
+        if cookies_filepath:
+            self.config['cookies_filepath'] = cookies_filepath
+
+    def save_cookies(self, filepath=None):
+        """ Saves session cookies """
+        filepath = filepath or self.cookies_filepath
+        if not filepath:
+            logger.error("Could not save cookies, filepath/<type> is %s/%s", filepath, type(filepath))
+            return
+        filepath = os.path.expanduser(filepath)
+        logger.info("Saving cookies to file: %s", filepath)
+        try:
+            with open(filepath, 'wb') as fd:
+                save_cookies(fd, self.cookies)
+            self.cookies_filepath = filepath
+        except FileNotFoundError:
+            logger.error("Could not save cookies to file: %s", filepath)
+
+    def load_cookies(self, filepath=None):
+        """ Saves session cookies """
+        filepath = filepath or self.cookies_filepath
+        if not filepath:
+            logger.warning("Could not save cookies, filepath/<type> is %s/%s", filepath, type(filepath))
+            return
+        filepath = os.path.expanduser(filepath)
+        logger.info("Loading cookies from file: %s", filepath)
+        try:
+            with open(filepath, 'rb') as fd:
+                cookiejar = load_cookies(fd)
+                try:
+                    self.cookies.update(cookiejar)
+                except AttributeError:
+                    # self.cookie does not support update, it might be a http.cookiejar.CookieJar object
+                    self.cookies = cookiejar
+            self.cookies_filepath = filepath
+        except FileNotFoundError:
+            logger.error("Could not load cookies from file: %s", filepath)
+
+    def save_config(self, filepath=None):
+        """
+        Saves config to filepath. If config_filepath is given, this is considered
+        the new config location and the config will be saved to this file.
+        """
+        if filepath is None:
+            filepath = self.config_filepath
+        try:
+            save_config(self.config, filepath)
+        except FileNotFoundError:
+            logger.error("Could not save config to file: %s", filepath)
+        self.config_filepath = filepath
+
+    def load_config(self, filepath=None):
+        """ Load config from file. """
+        if filepath is None:
+            filepath = self.config_filepath
+        try:
+            config = load_config(filepath)
+        except FileNotFoundError:
+            logger.error("Could not load config from file: %s", filepath)
+        self.config.update(config)
+        self.config_filepath = filepath
+        return config
+
 
     def get_resource_url(self, resource):
         """ Get absolute url for a named resource. """
@@ -152,8 +261,8 @@ class InstapaperClient(object):
             persist_tokens = self.config.get('persist_access_tokens') or bool(self.config.get('access_tokens'))
         if persist_tokens:
             self.config['access_tokens'] = tokens
-            save_config(self.config)
         return tokens
+
 
 
     def verify_credentials(self):
@@ -162,7 +271,6 @@ class InstapaperClient(object):
         Output on success: A user object, e.g.
             [{"type":"user","user_id":54321,"username":"TestUserOMGLOL"}]
         """
-        #
         r = self.post('account/verify_credentials')
         try:
             # r.json() has keys "user_id" and "username".
@@ -187,11 +295,12 @@ class InstapaperClient(object):
     def clear_access_tokens(self):
         """ Removes access tokens from config and saves it. """
         del self.config['access_tokens']
-        save_config(self.config)
+        self.save_config()
 
 
     def post(self, endpoint, data=None):
         """
+        Post data to REST endpoint.
         Instapaper specifies that parameters are never sent in the query string.
         """
         url = self.get_resource_url(endpoint)
@@ -205,7 +314,7 @@ class InstapaperClient(object):
         err = is_error(response)
         if err:
             logger.info("Error response: %s", response)
-            logger.info("Response status_code: %s, text: %s", response.status_code, response.text)
+            logger.info("Response status_code: %s, text: %s", response.status_code, response.text[0:1000])
             self.status = False
             # Should probably raise an error or something here...
         else:

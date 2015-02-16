@@ -42,8 +42,8 @@ def credentials_prompt(user='', password=''):
     """ Simple method to prompt for user credentials. """
     if not user:
         user = getpass.getuser()
-    user = input("User: [%s]" % user) or user
-    password = getpass.getpass() or password
+    user = input("Instapaper username/email: [%s]" % user) or user
+    password = getpass.getpass("Instapaper password (if you have one):") or password
     return user, password
 
 
@@ -51,7 +51,8 @@ def credentials_prompt(user='', password=''):
 def load_config(filepath=None):
     """ Load config from filesystem. """
     if filepath is None:
-        filepath = os.path.expanduser("~/.instaporter.yaml")
+        filepath = os.path.expanduser("~/.config/instaporter/config.yaml")
+    filepath = os.path.normpath(filepath)
     try:
         config = yaml.load(open(filepath))
         logger.debug("Config with %s keys loaded from file: %s", len(config), filepath)
@@ -69,26 +70,30 @@ def save_config(config, filepath=None):
     logger.debug("Config with %s keys dumped to file: %s", len(config), filepath)
 
 
-def get_config(args=None, config_fpath=None):
+def get_config(args=None, config_filepath=None):
     """ Get config, merging args with persistent config. """
-    config = load_config(config_fpath)
+    config_filepath = config_filepath or args.pop('config_filepath', None)
+    config = load_config(config_filepath)
 
     # Inject client/consumer key and secret:
+    # No, better to leave this out of the (user) config;
 
     # Merge with args:
     if isinstance(args, argparse.Namespace):
         args = args.__dict__
-    for key, value in args:
+    logger.debug("Merging %s keys from %s with %s keys provided as args",
+                 len(config), config_filepath, len(args))
+    for key, value in args.items():
         if value is not None:
             config[key] = value
-    logger.debug("Returning config merged with args...")
+    logger.debug("Returning merged config with args, has %s keys", len(config))
     return config
 
 
 def load_consumer_keys(path=None):
     """ Load Instapaper client/consumer key and secret. """
     if path is None:
-        path = os.path.expanduser("~.instaporter_key_and_secret.yaml")
+        path = os.path.expanduser("~/.config/instaporter/instaporter_key_and_secret.yaml")
     if not os.path.isfile(path):
         path = os.path.join(os.path.dirname(LIBDIR), "consumer_key_and_secret.yaml")
     with open(path) as fd:
@@ -104,7 +109,8 @@ def init_logging(args=None, prefix="Instaporter"):
     - logtofile
     - testing
     """
-
+    if args is None:
+        args = {}
     # Examples of different log formats:
     #logfmt = "%(levelname)s: %(filename)s:%(lineno)s %(funcName)s() > %(message)s"
     #logfmt = "%(levelname)s %(name)s:%(lineno)s %(funcName)s() > %(message)s"
@@ -129,10 +135,10 @@ def init_logging(args=None, prefix="Instaporter"):
     #logstreamhandler.setFormatter(logstreamformatter)
 
 
-    if 'loglevel' in args:
+    if args.get('loglevel'):
         try:
             loglevel = int(args['loglevel'])
-        except ValueError:
+        except (TypeError, ValueError):
             loglevel = getattr(logging, args['loglevel'])
     else:
         loglevel = logging.DEBUG if args.get('testing') else logging.INFO
