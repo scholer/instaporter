@@ -24,10 +24,102 @@ Utility functions for rewriting/reformatting/replacing html documents/content.
 
 import re
 from urllib.parse import urljoin
-
+import requests
 
 import logging
 logger = logging.getLogger(__name__)
+
+
+def find_doi(html):
+    """
+    Find a regex in html. If more DOIs are present, we assume the first DOI is the one we want.
+    """
+    #DOI_REGEX = r"doi.+(10\\.\d{4,6}/[^\"'&<% \t\n\r\f\v]+)"
+    DOI_REGEX = r"doi.+(10\.\d{4,6}/[^\"'&<%\s]+)"
+    hits = re.findall(DOI_REGEX, html)
+    if hits:
+        return hits[0]
+    return None
+
+def find_headings(html):
+    """
+    Find headings in html.
+    Returns a list of (<heading-level>, <heading>), e.g. [(2, "Abstract")]
+    """
+    # \1 refers to the first group.
+    # (?P=name) refers to the named groups with name "name".
+    # (?...) specifies a non-capturing group.
+    headings = re.findall(r"<h(\d)[^>]*?>(?P<heading>.*?):?</h\1>", html)
+    return headings
+
+def find_titles(html):
+    """
+    Find title tags in html.
+    """
+    titles = re.findall(r"<title[^>]*?>(.*?)</title>", html)
+    return titles
+
+def find_keywords(html):
+    """
+    Find tags/keywords in html.
+    Uhm... Doesn't seem to be that easy.
+    Nature has this: <meta name="keywords" content="Long non-coding RNAs" />
+    .. same for ACS Journals.
+    """
+    # TODO: Find keywords/tags, better.
+    tags = re.findall(r'<meta\s(\w+="[^"]+")\s+(\w+="[^"]+")[^>]*?>', html)
+    tags = [tag for tag in tags if any(elem.lower() == 'name="keywords"' for elem in tag)]
+    if not tags:
+        return
+    tag = tags[0]
+    keywords = tag[1] if tag[0] == 'name="keywords"' else tag[0]
+    keywords = keywords.split("=")[1].strip(' "')
+    keywords = [word.strip() for word in keywords.split(',')]
+    return keywords
+
+def find_metadata(html, url=None):
+    """
+    Find as much metadata from html as possible.
+    Returns a construct, metadata, with:
+        html:
+            title: title, as found in html.
+            keywords: keywords, as found in html.
+            abstract: abstract, as found in html.
+        doi: <CLS data from dx.doi.org, if a DOI was found in the html>
+    """
+    metadata = {'doi': None, 'url': url}
+    html_titles = find_titles(html)
+    doi = find_doi(html)
+    metadata['html'] = {'title': html_titles[0] if html_titles else None,
+                        'keywords': find_keywords(html),
+                        'abstract': '',
+                        'doi': doi}
+    #html_keywords = find_keywords(html)
+    #html_abstract = ''
+    if not doi:
+        print("\nCould not find any DOI in html; aborting..")
+    else:
+        doi_data = get_doi_data(doi)
+        if doi_data:
+            metadata['doi'] = doi_data
+    return metadata
+
+def get_doi_data(doi):
+    """ Get DOI data as dict. Returns None if DOI response was not ok. """
+    r = get_doi_response(doi)
+    if not r.ok:
+        print("DOI response not OK: ", r)
+        return
+    return r.json()
+
+def get_doi_response(doi):
+    """ Query dx.doi.org for doi. Return requests Response. """
+    # Do NOT include the ":" in the headers for requests:
+    doi_headers = {"Accept": "application/vnd.citationstyles.csl+json"}
+    doi_api_baseurl = "http://dx.doi.org"
+    doi_endpoint = urljoin(doi_api_baseurl, doi)
+    r = requests.get(doi_endpoint, headers=doi_headers)
+    return r
 
 
 def get_doc_title(html):
@@ -101,12 +193,12 @@ def html_symbol_repl(html, url=None):
     math = [(r'<img\s[^>]*?src="/__chars/math/special/%s/[^>]*>' % char, "&#%s;" % code)
             for char, code in symbols]
 
-    other =[('<img\s[^>]*?src="/__chars/less/special/le/[^>]*>', "&#8804"), # Less-than-or-equal
-            ('<img\s[^>]*?src="/__chars/micro/[^>]*>', "&#956"), # Micro (looks similar to mu)
-            ('<img\s[^>]*?src="/__chars/plus/special/plusmn/[^>]*>', "&#177"), # Plus-minus
-    #        ('<img src="/__chars/math/special/lfen/[^>]*>', "&#9001"), # Left bracket/chevron/fence
-    #        ('<img src="/__chars/math/special/rfen/[^>]*>', "&#9002"), # Right bracket/chevron/fence
-           ]
+    other = [(r'<img\s[^>]*?src="/__chars/less/special/le/[^>]*>', "&#8804"), # Less-than-or-equal
+             (r'<img\s[^>]*?src="/__chars/micro/[^>]*>', "&#956"), # Micro (looks similar to mu)
+             (r'<img\s[^>]*?src="/__chars/plus/special/plusmn/[^>]*>', "&#177"), # Plus-minus
+             #(r'<img src="/__chars/math/special/lfen/[^>]*>', "&#9001"), # Left bracket/chevron/fence
+             #(r'<img src="/__chars/math/special/rfen/[^>]*>', "&#9002"), # Right bracket/chevron/fence
+            ]
     #le      8804
 
     replace = greek + math + other

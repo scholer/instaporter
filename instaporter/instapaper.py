@@ -41,7 +41,7 @@ import os
 from urllib.parse import urljoin#, urlsplit
 #import json
 import pickle
-from six import string_types
+#from six import string_types
 import logging
 logger = logging.getLogger(__name__)
 
@@ -126,7 +126,8 @@ class InstapaperClient(object):
         if self.config_filepath:
             self.load_config()
         # Note: The username might change over time. Could be a property that queries the latest request header.
-        self.username = username or config.get('instapaper_username')
+        self._username = username
+        self._password = password
         self.status = False
         self.apiurl = config.get('apiurl') or 'https://www.instapaper.com/api/1.1/'
         # Create xauth session:
@@ -153,6 +154,37 @@ class InstapaperClient(object):
             username, password = credentials_prompt(self.username)
         if username and password is not False:
             self.status = bool(self.login(username, password))
+
+    @property
+    def username(self):
+        """ Username property. Returns self._username if set, otherwise config['username']. """
+        return self._username or self.config.get('instapaper_username')
+    @username.setter
+    def username(self, value):
+        """ Set username.
+        If self._password has previously been set (e.g. on instantiation),
+        self._username is set. Else if config has instapaper_username entry, this is
+        updated. Else, self._username is used.
+        """
+        if self._username or not self.config.get('instapaper_username'):
+            self._username = value
+        else:
+            self.config['instapaper_username'] = value
+    @property
+    def password(self):
+        """ Password property. Returns self._password if set, otherwise config['instapaper_password']. """
+        return self._password if self._password is not None else self.config.get('instapaper_password', '')
+    @password.setter
+    def password(self, value):
+        """ Set password.
+        If self._password has previously been set (e.g. on instantiation),
+        self._password is set. Else if config has instapaper_password entry, this is
+        updated. Else, self._password is used.
+        """
+        if self._password or not self.config.get('instapaper_password'):
+            self._password = value
+        else:
+            self.config['instapaper_password'] = value
 
     @property
     def headers(self):
