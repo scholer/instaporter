@@ -46,7 +46,7 @@ def unicode_print(*args, sep=' '):
         print(*args)
     except UnicodeEncodeError:
         st = sep.join(args)
-        st += " (could not print some unicode character)"
+        st += " (could not print some unicode characters)"
         bst = st.encode('utf-8')
         print(bst)
         #sys.stdout.buffer.write(bst)
@@ -114,8 +114,10 @@ def add_to_zotero(config, metadata, pdf=None, collections=None, template=None):
     # Add item (payload is just a list of items to add)
     # pdb.set_trace()
     resp = zot.create_items([item_data])
+    logger.info("zot.create_items returned: %s", resp)
     try:
         key = resp['success']['0']
+        print("Zotero item successfully created:", key)
     except KeyError:
         print("Zotero creation did not succeed: ", resp)
         return
@@ -128,11 +130,12 @@ def add_to_zotero(config, metadata, pdf=None, collections=None, template=None):
         # Linked attachments can use relative paths in a directory that you sync across devices
         # using third party software, e.g. Dropbox.
         att_resp = zot.attachment_simple([pdf], key)
+        logger.info("zot.attachment_simple returned: %s", att_resp)
         try:
             att_key = att_resp['success']['0']
-            print("Uploaded attachment:", att_key)
+            print("Attachment uploaded to Zotero:", att_key)
         except KeyError:
-            print("Zotero creation did not succeed: ", att_resp)
+            print("Zotero attachment creation did not succeed: ", att_resp)
 
 
 
@@ -299,4 +302,3 @@ def zotero_delete_attachments():
         answer = answer and answer[0].lower() == 'y'
         if answer:
             zot.delete_item(it)
-

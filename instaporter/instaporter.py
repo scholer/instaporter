@@ -301,8 +301,7 @@ def main(args=None):
 
     # Password is a little special. If password is provided as command line arg,
     # make sure NOT to inject in the config, as this might be saved.
-    if 'password' in args:
-        password = args.pop('password')
+    password = args.pop('password', None)
     # configfile arg should also not be merged with or saved to the config:
     config_filepath = args.pop('configfile', None)
     # Load config, keys, credentials, etc:
