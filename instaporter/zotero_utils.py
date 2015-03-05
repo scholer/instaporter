@@ -129,6 +129,15 @@ def add_to_zotero(config, metadata, pdf=None, collections=None, template=None):
         # A linked_file is what you get if you hold ctrl+shift while drag-dropping a pdf to an item.
         # Linked attachments can use relative paths in a directory that you sync across devices
         # using third party software, e.g. Dropbox.
+        # TODO: zot.attachment_simple([pdf], key) fails OCCATIONALLY.
+        # I suspect this might be a timing/caching issue, i.e. the newly created parent
+        # has not been fully registered.
+        # I will therefore try to (a) wait, or (b) get the item.
+        # Status: It seems to work; I have not gotten any errors since introducing this...
+        import time
+        print("Sleeping for five seconds before uploading attachment...")
+        time.sleep(5)
+        parent = zot.item(key)
         att_resp = zot.attachment_simple([pdf], key)
         logger.info("zot.attachment_simple returned: %s", att_resp)
         try:
