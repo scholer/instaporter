@@ -91,7 +91,15 @@ def get_config(args=None, config_filepath=None):
 
 
 def load_consumer_keys(path=None):
-    """ Load Instapaper client/consumer key and secret. """
+    """
+    Load Instapaper client/consumer key and secret.
+    Returns a dict which should have keys
+        "consumer_key", "consumer_secret"
+    which can be used as:
+        keys = load_consumer_keys(path)
+        client = InstapaperClient(config, **keys)
+
+    """
     if path is None:
         path = os.path.expanduser("~/.config/instaporter/instaporter_key_and_secret.yaml")
     if not os.path.isfile(path):

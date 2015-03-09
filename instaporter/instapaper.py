@@ -68,7 +68,7 @@ def is_error(response):
     that it not interpreted as an error.
     """
     if response.status_code >= 300:
-        return response.status
+        return response.ok
     try:
         data = response.json()
     except ValueError:
@@ -112,7 +112,7 @@ class InstapaperClient(object):
 
     pass_prompt = credentials_prompt
 
-    def __init__(self, config=None, client_key=None, client_secret=None,
+    def __init__(self, config=None, consumer_key=None, consumer_secret=None,
                  username=None, password='', headers=None, config_filepath=None):
         """
         filename or filepath?
@@ -131,7 +131,7 @@ class InstapaperClient(object):
         self.status = False
         self.apiurl = config.get('apiurl') or 'https://www.instapaper.com/api/1.1/'
         # Create xauth session:
-        self.session = XAuthSession(client_key, client_secret)
+        self.session = XAuthSession(consumer_key, consumer_secret)
         # Update headers:
         if self.config.get('headers'):
             self.headers.update(self.config['headers'])

@@ -38,7 +38,7 @@ if __name__ == '__main__':
     utils.init_logging(args)
 
     keys = instaporter.load_consumer_keys()
-    client_key, client_secret = (keys[k] for k in ('consumer_key', 'consumer_secret'))
+    consumer_key, consumer_secret = (keys[k] for k in ('consumer_key', 'consumer_secret'))
     #username = "rasmusscholer@gmail.com"
     #username, password = instaporter.credentials_prompt(username)
 
@@ -46,8 +46,8 @@ if __name__ == '__main__':
     config.setdefault('persist_access_tokens', True)
     config.setdefault('instapaper_login_prompt', True)
 
-    #client = instapaper.InstapaperClient(config, client_key, client_secret, username, password)
-    client = instapaper.InstapaperClient(config, client_key, client_secret)
+    #client = instapaper.InstapaperClient(config, consumer_key, consumer_secret, username, password)
+    client = instapaper.InstapaperClient(config, consumer_key, consumer_secret)
 
     print("Config:", client.config)
     #sys.exit()
