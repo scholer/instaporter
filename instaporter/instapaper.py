@@ -66,15 +66,40 @@ def is_error(response):
     If the data does not have a type, return 2.
     Note that the data could be an empty list;
     that it not interpreted as an error.
+
+    Background: www.instapaper.com/api
+    Instapapaer REST API will always return a list in json format,
+    if the request suceeded with http status code < 300.
+    Each element in the list is a dict, which should always have a
+        "type": <user/bookmark/folder/meta/error>
+    item. If type is "error", then it typically has the form:
+    [{"type":"error", "error_code":1240, "message":"Invalid URL specified"}]
+
+    Exceptions:
+        bookmarks/list : returns a dict, not list.
+        bookmarks/get_text : returns HTML (with status code 200), not JSON.
     """
     if response.status_code >= 300:
-        return response.ok
+        return response.status_code
     try:
         data = response.json()
     except ValueError:
+        # Not sure this should happen...
+        if len(response.content) == 0:
+            # Empty response, propbably OK.
+            logger.warning("HTTP status code %s, but empty response.content: %s",
+                           response.status_code, response.content)
+        else:
+            logger.warning("HTTP status code %s, but could not parse response.content: %s",
+                           response.status_code, response.content)
         return 1
+    logger.debug("Parsed json data of type %s and len %s", type(data), len(data))
     if len(data) == 0:
         print("Empty response (but that's not neccesarily an error, could be empty list):", response)
+        return 0
+    if isinstance(data, dict):
+        # Assume that this is OK.
+        logger.debug("-- parsed json is dict with keys: %s", data.keys())
         return 0
     try:
         if data[0]["type"] == "error":
@@ -82,8 +107,12 @@ def is_error(response):
         else:
             return False
     except KeyError:
-        print("What the fuck, response has no type?! --", data)
-        return 2
+        try:
+            print("What the fuck, response has no type?! --", data)
+            return 2
+        except UnicodeError as e:
+            print("\n--UnicodeError %s while trying to print data" % e)
+            return 3
 
 
 
@@ -94,6 +123,30 @@ def save_cookies(fd, cookiejar):
 def load_cookies(fd):
     """ Load cookies from file. """
     return pickle.load(fd)
+
+def print_bookmarks(bookmarks):
+    if isinstance(bookmarks, dict):
+        bookmarks = [bookmarks]
+    #for bookmark in bookmarks:
+    #print("\n\n".join("{}".format(b['title']) \
+    #                  +"\n-".join("{}: {}".format(k, k)
+    #                              for k in 'url private_source starred progress bookmark_id description type'.split())
+    #                  for b in bookmarks))
+    for bookmark in bookmarks:
+        try:
+            print("\n" + bookmark['title'] + \
+                  "\n-".join("{}: {}".format(k, bookmark[k])
+                             for k in 'url private_source starred progress bookmark_id description type'.split()))
+        except UnicodeError:
+            print("\n\n-----------------------------------------\n")
+            print("Could not print the following bookmark: (UnicodeError)")
+            #for k, v in bookmark.items():
+            for k in 'title url private_source starred progress bookmark_id description type'.split():
+                try:
+                    print("-{}: {}".format(k, bookmark[k]))
+                except UnicodeError:
+                    print("--> Could not print key: %s (%s chars)" % (k, len(bookmark[k])))
+            print("\n-----------------------------------------\n")
 
 
 
@@ -129,6 +182,7 @@ class InstapaperClient(object):
         self._username = username
         self._password = password
         self.status = False
+        self.parse_json = True # Mostly for debugging. Deactivate to return response objects.
         self.apiurl = config.get('apiurl') or 'https://www.instapaper.com/api/1.1/'
         # Create xauth session:
         self.session = XAuthSession(consumer_key, consumer_secret)
@@ -339,10 +393,14 @@ class InstapaperClient(object):
         return self.session.post(url, data=data)
 
 
-    def check_response(self, response, json=True):
+    def check_response(self, response, json=None):
         """
-        Check whether response is ok and return it.
+        Check whether response is ok and return the response's
+        parsed json data (or the response object, if json=False).
+        Use self.parse_json to control default json-parsing behaviour.
         """
+        if json is None:
+            json = self.parse_json
         err = is_error(response)
         if err:
             logger.info("Error response: %s", response)
@@ -439,7 +497,11 @@ class InstapaperClient(object):
     def get_bookmark_text(self, bookmark_id):
         """ Get text for bookmark with bookmark_id. """
         r = self.post('bookmarks/get_text', data={'bookmark_id': bookmark_id})
-        return self.check_response(r)
+        #return self.check_response(r)
+        # You cannot just do check_response since it returns HTML, not JSON.
+        self.status = r.ok
+        return r.text
+
 
 
 
