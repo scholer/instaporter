@@ -187,6 +187,7 @@ requests.Session object to download content. (%s, %s)""", ezclient_config, ezcli
             # Note: Should args be ezclient_config? Or the Instaporter args/config?
             # TODO: If pdf url filename is too generic, make something more appropriate?
             # DONE: If filename already exists, do checksum calculation to detect identical file.
+            # fetch_pdf returns None if no pdf was found:
             pdf_filepath = fetch_pdf(r.url, args, ezclient, r=r, metadata=metadata)
         else:
             logger.info("download_pdf is specified and iterable, but url.netloc is not in download_pdf. (%s not in %s)",

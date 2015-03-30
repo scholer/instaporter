@@ -155,6 +155,6 @@ def init_logging(args=None, prefix="Instaporter"):
                         format=loguserfmt,
                         datefmt=logtimefmt if args.get('testing') else logdatefmt,
                         # filename='example.log',
-                        )
+                       )
 
     logger.info("Logging system initialized with loglevel %s", loglevel)

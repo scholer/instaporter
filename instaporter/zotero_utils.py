@@ -70,9 +70,11 @@ def add_to_zotero(config, metadata, pdf=None, collections=None, template=None):
 
     html_title = metadata['html'].get('title')
     doi_data = metadata['doi'].copy() # zotero_data_from_cls will modify input doi_data
-    if not (html_title and html_title.lower() == doi_data.get('title', '').strip(" []<>")):
-        print("HTML title is:", html_title)
-        unicode_print("DOI title is: ", doi_data['title'].strip(" []<>"))
+    if not (html_title and html_title.lower() == doi_data.get('title', '').strip(" []<>").lower()):
+        print("HTML title is: '%s'" % html_title)
+        unicode_print("DOI title is:  '%s'" % doi_data['title'].strip(" []<>"))
+        print("DOI title == HTML title? %s" % \
+              (html_title.lower() == doi_data.get('title', '').strip(" []<>").lower(), ))
         ok = input("Continue importing DOI data to Zotero? [yes/no] ")
         ok = bool(ok) and ok[0].lower() == 'y'
         if not ok:
