@@ -40,6 +40,11 @@ htmlcov/
 nosetests.xml
 coverage.xml
 
+*secret.yaml
+tests/*.html
+tests/
+notes/
+
 # Translations
 *.mo
 *.pot

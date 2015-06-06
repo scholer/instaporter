@@ -1,18 +1,15 @@
 @echo off
 
+REM We need pip environment because of requests_oauthlib:
 call activate py3pip
 
-REM pause
 
-REM python %~dp0\..\gelutils\gelannotator_gui.py %1
+REM instap.py just imports the instaporter.instaporter module and executes the main function:
 
-REM instap just imports the instaporter.instaporter module and executes the main function:
-
-REM You can add config params here:
-
+REM You can add cmdline args (or config params) here:
 REM python %~dp0\instap.py url %1
-REM with argument:
 
+REM Start with loglevel:
 python %~dp0\instap.py --loglevel INFO url %1
 
 
@@ -27,6 +24,6 @@ REM python %~dp0\instap.py --loglevel INFO url http://www.nature.com/nature/jour
 REM Circular RNA: http://www.nature.com/nature/journal/v495/n7441/full/nature11993.html
 REM python %~dp0\instap.py --loglevel INFO url http://www.nature.com/nature/journal/v495/n7441/full/nature11993.html
 
-IF ERRORLEVEL 1 pause
 
+REM IF ERRORLEVEL 1 pause
 pause

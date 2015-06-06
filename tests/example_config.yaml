@@ -1,0 +1,20 @@
+# instaporter config parameters:
+# Most of these are for instapaper.Client
+# Saved access tokens (from last session):
+persist_access_tokens: True                     # Whether to persist access tokens. If access_tokens are already here, this is assumed True.
+access_tokens: (oauth access key and secret)    # Usually, you do not need to set this.
+apiurl: 'https://www.instapaper.com/api/1.1/'   # This is the default Instapaper API url.
+instapaper_username: <your username/email>      # Your Instapaper username.
+instapaper_password: null                       # Your Instapaper password. Make sure it is not sensitive!
+instapaper_login_prompt:                        # Configure whether to allow Instapaper client to prompt for credentials.
+instapaper_consumer_keys_file: <filepath>       # Path to your personal Instapaper consumer key and secret (yaml format).
+# Set to a non-False value to enable ezfetcher.ezclient.
+# If ezclient_config is a dict, this is used as config for EzClient.
+# If ezclient_config
+# Otherwise the global config is used. See ezfetcher config for parameters.
+ezclient_config: <True or dict>
+download_pdf: True                              # Try to get pdf from pages after fetching (using ezfetcher)
+download_pdf: "nature.com sciencemag.org"
+download_pdf: ['nature.com', 'sciencemag.org']
+
+
