@@ -165,7 +165,7 @@ requests.Session object to download content. (%s, %s)""", ezclient_config, ezcli
     # FIXED: Rewrite all hrefs to absolute instead of relative URLs + nature's symbol replacement:
     # Fixed: Add title.
     content = html_symbol_repl(content, url)    # Do this *before* converting URLs.
-    content = make_urls_absolute(url, content)
+    content = make_urls_absolute(content, url)
     #with open(os.path.expanduser('~\\temp_full.html'), 'w') as fp:
     #    fp.write(content)
     # It seems is_private_from_source needs to be set, otherwise

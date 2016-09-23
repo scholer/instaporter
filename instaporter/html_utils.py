@@ -133,7 +133,7 @@ def get_doc_title(html):
     return title
 
 
-def make_urls_absolute(baseurl, html):
+def make_urls_absolute(html, baseurl):
     """
     Ensure that all urls in html document is absolute, not relative.
     Consideration: Should you rewrite url fragments ?
